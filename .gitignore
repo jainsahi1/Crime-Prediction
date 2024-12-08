@@ -1,162 +1,230 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+#!/usr/bin/env python
+# coding: utf-8
 
-# C extensions
-*.so
+# In[2]:
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
 
-# PyInstaller
-#  Usually these files are written by a python script from a template
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-*.manifest
-*.spec
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+from sklearn.metrics import accuracy_score, classification_report
+from sklearn.preprocessing import LabelEncoder
+# Impute missing values using SimpleImputer
+from sklearn.impute import SimpleImputer
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.py,cover
-.hypothesis/
-.pytest_cache/
-cover/
+# In[4]:
 
-# Translations
-*.mo
-*.pot
 
-# Django stuff:
-*.log
-local_settings.py
-db.sqlite3
-db.sqlite3-journal
+# Load the dataset
+data = pd.read_csv("Crime.csv")
 
-# Flask stuff:
-instance/
-.webassets-cache
+print(data.head())
 
-# Scrapy stuff:
-.scrapy
+print(data.info())
 
-# Sphinx documentation
-docs/_build/
 
-# PyBuilder
-.pybuilder/
-target/
+# In[5]:
 
-# Jupyter Notebook
-.ipynb_checkpoints
 
-# IPython
-profile_default/
-ipython_config.py
+# Check for missing values
+print(data.isnull().sum())
 
-# pyenv
-#   For a library or package, you might want to ignore these files since the code is
-#   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+# Option 1: Fill missing values with zero for columns where it's appropriate (e.g., crime counts)
+data.fillna(0, inplace=True)
 
-# pipenv
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#   However, in case of collaboration, if having platform-specific dependencies or dependencies
-#   having no cross-platform support, pipenv may install dependencies that don't work, or not
-#   install all needed dependencies.
-#Pipfile.lock
+# Option 2: Drop rows with missing values if they are few and don’t impact analysis
+# data.dropna(inplace=True)
 
-# poetry
-#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
-#   This is especially recommended for binary packages to ensure reproducibility, and is more
-#   commonly ignored for libraries.
-#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
-#poetry.lock
 
-# pdm
-#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
-#pdm.lock
-#   pdm stores project-wide configurations in .pdm.toml, but it is recommended to not include it
-#   in version control.
-#   https://pdm.fming.dev/latest/usage/project/#working-with-version-control
-.pdm.toml
-.pdm-python
-.pdm-build/
+# In[6]:
 
-# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
-__pypackages__/
 
-# Celery stuff
-celerybeat-schedule
-celerybeat.pid
+# Drop non-informative columns for modeling
+selected_data = data.drop(columns=['STATE/UT', 'DISTRICT'])
 
-# SageMath parsed files
-*.sage.py
+# Calculate correlation to check for highly correlated features
+correlation_matrix = selected_data.corr()
 
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# Display correlation matrix to decide if any features can be dropped
+print(correlation_matrix)
 
-# Spyder project settings
-.spyderproject
-.spyproject
 
-# Rope project settings
-.ropeproject
+# In[7]:
 
-# mkdocs documentation
-/site
 
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
+# Standardize column names by converting to lowercase and removing leading/trailing spaces
+#selected_data.columns = selected_data.columns.str.lower().str.strip()
 
-# Pyre type checker
-.pyre/
+# Calculate YoY change for each crime type
+for crime_type in data.columns[2:]:  # Skipping 'YEAR'
+    data[f'{crime_type}_yoy_change'] = data.groupby('DISTRICT')[crime_type].pct_change() * 100
 
-# pytype static type analyzer
-.pytype/
 
-# Cython debug symbols
-cython_debug/
+# In[8]:
 
-# PyCharm
-#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
-#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
-#  and can be added to the global gitignore or merged into this file.  For a more nuclear
-#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+
+# Calculate rolling mean (3-year window) for each crime type
+for crime_type in data.columns[2:]:
+    data[f'{crime_type}_3yr_avg'] = data.groupby('DISTRICT')[crime_type].rolling(window=3).mean().reset_index(level=0, drop=True)
+
+
+# In[11]:
+
+
+# Binary target for increase (1) or decrease (0) in total IPC crimes
+data['total_ipc_crimes_increase'] = (data['TOTAL IPC CRIMES'].diff() > 0).astype(int)
+
+
+# In[15]:
+
+
+# Example: Theft to Burglary ratio
+data['BURGLARY'] = data['THEFT'] / (data['BURGLARY'] + 1)
+
+
+# In[16]:
+
+
+# Drop rows with NaN values after feature engineering
+final_data = data.dropna()
+
+# Save the final dataset
+final_data.to_csv("final_crime_data.csv", index=False)
+
+
+# In[19]:
+
+
+# One-Hot Encode the 'DISTRICT' column
+encoded_data = pd.get_dummies(data, columns=['DISTRICT'], prefix='DISTRICT')
+
+# Display the first few rows of the encoded dataset
+print(encoded_data.head())
+
+
+# In[22]:
+
+
+# Assuming 'encoded_data' is the DataFrame after encoding, and 'target' is the target column name
+# Define your target variable. For example, let's assume we're predicting increase/decrease in 'TOTAL IPC CRIMES'
+encoded_data['crime_increase'] = (encoded_data['TOTAL IPC CRIMES'].diff() > 0).astype(int)
+
+# Drop columns that are not needed for training
+X = encoded_data.drop(columns=['TOTAL IPC CRIMES', 'crime_increase', 'YEAR'])
+y = encoded_data['crime_increase']
+
+# Before splitting into train/test, identify and encode object (string) columns
+for col in X.select_dtypes(include=['object']).columns:
+    # Create a LabelEncoder for each categorical column
+    le = LabelEncoder()
+    # Fit and transform the column in the entire dataset (X)
+    X[col] = le.fit_transform(X[col])
+
+# Replace infinite values with NaN
+X.replace([np.inf, -np.inf], np.nan, inplace=True)
+imputer = SimpleImputer(strategy='mean')  # You can change the strategy if needed
+X = imputer.fit_transform(X)
+
+# Split data into training and testing sets (80% training, 20% testing)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+
+# Optional: Further split the training data into training and validation sets (if needed)
+X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.25, random_state=42)  # 60% train, 20% val, 20% test
+
+# Display the shapes of the datasets
+print("Training set shape:", X_train.shape)
+print("Validation set shape:", X_val.shape)
+print("Testing set shape:", X_test.shape)
+
+
+# In[28]:
+
+
+# Initialize the Logistic Regression model
+log_reg = LogisticRegression(max_iter=200, random_state=42)
+
+# Train the model on the training set
+log_reg.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred = log_reg.predict(X_test)
+
+
+
+
+# In[29]:
+
+
+# Evaluate the model
+print("Logistic Regression Accuracy:", accuracy_score(y_test, y_pred))
+print("Classification Report:\n", classification_report(y_test, y_pred))
+
+
+# In[31]:
+
+
+# Initialize the Decision Tree model
+dt_model = DecisionTreeClassifier(random_state=42, max_depth=10)  # Set max_depth to control overfitting
+
+# Train the model
+dt_model.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred_dt = dt_model.predict(X_test)
+
+
+
+
+# In[32]:
+
+
+# Evaluate the model
+print("Decision Tree Accuracy:", accuracy_score(y_test, y_pred_dt))
+print("Classification Report for Decision Tree:\n", classification_report(y_test, y_pred_dt))
+
+
+# In[33]:
+
+
+# Initialize the Random Forest model
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42, max_depth=10)  # Set max_depth and n_estimators
+
+# Train the model
+rf_model.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred_rf = rf_model.predict(X_test)
+
+
+# In[34]:
+
+
+# Evaluate the model
+print("Random Forest Accuracy:", accuracy_score(y_test, y_pred_rf))
+print("Classification Report for Random Forest:\n", classification_report(y_test, y_pred_rf))
+
+
+# In[35]:
+
+
+xgb_model = XGBClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)
+
+# Train the model
+xgb_model.fit(X_train, y_train)
+
+# Predict on the test set
+y_pred_xgb = xgb_model.predict(X_test)
+
+
+
+# In[36]:
+
+
+# Evaluate the model
+print("XGBoost Accuracy:", accuracy_score(y_test, y_pred_xgb))
+print("Classification Report for XGBoost:\n", classification_report(y_test, y_pred_xgb))
